@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/gateway_db
+    username: gateway_user
+    password: secure_password
+
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+logging:
+  file:
+    name: /dev/null # Generally log to stdout in docker
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

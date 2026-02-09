@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: gateway
+data:
+  application.yml: |
+    spring:
+      application:
+        name: api-gateway
+      jpa:
+        show-sql: false
+    logging:
+      level:
+        root: INFO

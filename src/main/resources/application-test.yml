@@ -1,0 +1,15 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+logging:
+  level:
+    root: INFO
+    com.gateway.apigateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.test: DEBUG
