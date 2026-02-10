@@ -74,8 +74,57 @@ See `application.yml` for default settings.
 - Rate Limiter Algorithm defaults to `TOKEN_BUCKET`.
 - Default Redis prefix: `rate_limit:`
 
-## Architecture
+## System Architecture
 
-- **PostgreSQL**: Stores Users, API Keys, Configs, Logs.
-- **Redis**: Stores active rate limit counters and cache.
-- **Spring Cloud Gateway**: Handles routing and filtering.
+The VelocityGate architecture is designed for high availability, security, and observability. It acts as the single entry point for all microservices.
+
+```mermaid
+graph TD
+    Client([Client / External App]) -->|HTTPS Request| Gateway[API Gateway Service]
+
+    subgraph "VelocityGate Core"
+        Gateway -->|1. Rate Limit Check| Redis[(Redis Cluster)]
+        Gateway -->|2. Authentication| Auth[Security Manager]
+        Gateway -->|3. Route Lookup| Router[Dynamic Router]
+        Gateway -->|4. Circuit Breaker| Res[Resilience4j]
+
+        Auth -->|Verify API Key/JWT| DB[(PostgreSQL)]
+        Router -->|Fetch Service Config| DB
+    end
+
+    subgraph "Observability"
+        Prometheus[Prometheus] -->|Scrape Metrics| Gateway
+        Grafana[Grafana] -->|Visualize| Prometheus
+    end
+
+    subgraph "Backend Services"
+        ServiceA[User Service]
+        ServiceB[Payment Service]
+        ServiceC[Inventory Service]
+    end
+
+    Res -->|Forward Request| ServiceA
+    Res -->|Forward Request| ServiceB
+    Res -->|Forward Request| ServiceC
+
+    Gateway -->|Async Logging| DB
+```
+
+### Component Breakdown
+
+1.  **API Gateway Core (Spring Boot 3.2)**
+    - **Rate Limiter**: Distributed rate limiting using Token Bucket algorithm backed by Redis. Supports different limits per API key/Tier.
+    - **Security Manager**: Handles API Key validation (hashed storage) and JWT verification for administrative endpoints.
+    - **Dynamic Router**: Routes requests based on configurations stored in the database, allowing for runtime updates without restarts.
+    - **Service Registry**: Custom implementation storing active service definitions in PostgreSQL.
+
+2.  **Data Layer**
+    - **PostgreSQL**: Primary persistent storage for User accounts, API Keys, Rate Limit configurations, Service definitions, and Request Logs.
+    - **Redis**: High-performance in-memory store for real-time rate limit counters and caching frequently accessed configurations.
+
+3.  **Resilience & Reliability**
+    - **Resilience4j**: Implements Circuit Breaker pattern to prevent cascading failures when backend services are down or slow.
+
+4.  **Observability**
+    - **Micrometer & Prometheus**: Exposes application metrics (request types, latency, error rates, JVM stats).
+    - **Grafana**: Provides visualization dashboards for monitoring system health.
