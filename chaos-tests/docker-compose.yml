@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  velocity-gate:
+    build: 
+      context: ..
+      dockerfile: Dockerfile
+    container_name: velocity-gate
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - REDIS_HOST=toxiproxy  # Connect via proxy
+      - REDIS_PORT=6379       # Proxy port mapping to actual redis
+      - DB_HOST=postgres      # If DB is needed (mocked/stubbed or real)
+    depends_on:
+      - toxiproxy
+      - postgres
+    networks:
+      - chaos-net
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.5.0
+    container_name: toxiproxy
+    ports:
+      - "8474:8474" # API
+      - "6379:6379" # Proxy to redis
+    networks:
+      - chaos-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-chaos
+    command: ["redis-server", "--maxmemory", "50mb", "--maxmemory-policy", "allkeys-lru"]
+    networks:
+      - chaos-net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-chaos
+    environment:
+      POSTGRES_DB: gateway_db
+      POSTGRES_USER: gateway_user
+      POSTGRES_PASSWORD: password
+    networks:
+      - chaos-net
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus-chaos
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - chaos-net
+
+networks:
+  chaos-net:
+    driver: bridge

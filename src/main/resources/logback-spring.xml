@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    
+    <springProperty scope="context" name="appName" source="spring.application.name"/>
+    
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"app_name":"${appName}"}</customFields>
+            <includeContext>false</includeContext>
+            <includeCallerData>false</includeCallerData>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/velocity-gate.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/velocity-gate.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+             <customFields>{"app_name":"${appName}"}</customFields>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+    <!-- Quiet down chatty libraries -->
+    <logger name="org.apache.catalina.startup.DigesterFactory" level="error" />
+    <logger name="org.apache.catalina.util.LifecycleBase" level="error" />
+    <logger name="org.apache.coyote.http11.Http11NioProtocol" level="warn" />
+    <logger name="org.hibernate.validator.internal.util.Version" level="warn" />
+    <logger name="org.springframework.web" level="INFO"/>
+    
+    <!-- Enable DEBUG for our app issues if needed -->
+    <!-- <logger name="com.gateway.apigateway" level="DEBUG" /> -->
+
+</configuration>

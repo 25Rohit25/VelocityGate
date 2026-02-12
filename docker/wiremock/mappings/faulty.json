@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPattern": "/faulty/.*"
+  },
+  "response": {
+    "status": 503,
+    "body": "{\"error\": \"Service Unavailable\"}",
+    "fault": "RANDOM_DATA_THEN_CLOSE" 
+  }
+}

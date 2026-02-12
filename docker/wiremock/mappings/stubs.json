@@ -1,0 +1,42 @@
+{
+  "mappings": [
+    {
+      "request": {
+        "method": "GET",
+        "urlPattern": "/users/.*"
+      },
+      "response": {
+        "status": 200,
+        "body": "{\"id\": 1, \"name\": \"Test User\", \"role\": \"USER\"}",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "urlPattern": "/orders/.*"
+      },
+      "response": {
+        "status": 200,
+        "body": "{\"id\": 1, \"items\": [\"item1\", \"item2\"], \"total\": 100.0}",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "fixedDelayMilliseconds": 50
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "urlPattern": "/faulty/.*"
+      },
+      "response": {
+        "status": 503,
+        "body": "{\"error\": \"Service Unavailable\"}",
+        "fault": "RANDOM_DATA_THEN_CLOSE"
+      }
+    }
+  ]
+}

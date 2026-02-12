@@ -1,0 +1,186 @@
+name: VelocityGate CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  DOCKER_IMAGE_NAME: velocitygate/api-gateway
+  JAVA_VERSION: "17"
+
+jobs:
+  # 1. Build, Test, and Security Scan
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: "temurin"
+          cache: maven
+
+      - name: Cache Maven Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: Run Unit & Integration Tests
+        run: mvn clean verify -Pcoverage # Assuming 'coverage' profile activates JaCoCo
+
+      - name: Generate Coverage Report
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./target/site/jacoco/jacoco.xml
+          fail_ci_if_error: true
+          # token: ${{ secrets.CODECOV_TOKEN }} # Optional for public repos
+
+      - name: Security Scan (Trivy - FS)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          format: "table"
+          exit-code: "1" # Fail pipeline on critical vulnerabilities
+
+  # 2. Docker Build & Push (Only on Merge to Main)
+  build-push-image:
+    name: Build & Push Docker Image
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract Metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            latest
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Image Security Scan (Trivy - Image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.DOCKER_IMAGE_NAME }}:sha-${{ github.sha }}"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: "CRITICAL,HIGH"
+
+  # 3. Deploy to DEV (Automatic)
+  deploy-dev:
+    name: Deploy to DEV
+    needs: build-push-image
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+      url: https://dev-api.velocitygate.com
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set K8s Context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_DEV }}
+
+      - name: Update Image in K8s (Rolling Update)
+        run: |
+          kubectl set image deployment/api-gateway gateway=${{ env.DOCKER_IMAGE_NAME }}:sha-${{ github.sha }} -n dev
+          kubectl rollout status deployment/api-gateway -n dev --timeout=60s
+
+      - name: Run Integration Tests (Post-Deploy)
+        run: |
+          # Simple connectivity check or full API test suite
+          curl --fail https://dev-api.velocitygate.com/actuator/health || exit 1
+
+  # 4. Deploy to STAGING (Manual Approval)
+  deploy-staging:
+    name: Deploy to STAGING
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging-api.velocitygate.com
+    steps:
+      - name: Set K8s Context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
+
+      - name: Deploy (Helm Upgrade)
+        run: |
+          helm upgrade --install api-gateway ./k8s/helm-chart \
+            --namespace staging \
+            --set image.tag=sha-${{ github.sha }} \
+            --wait --timeout 5m
+
+      - name: Run Load Test against Staging
+        run: |
+          # Ensure performance meets threshold before Prod
+          # k6 run load-tests/k6-script.js --env TARGET=staging
+          echo "Run load tests here..."
+
+  # 5. Deploy to PROD (Blue/Green Strategy)
+  deploy-prod:
+    name: Deploy to PROD
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://api.velocitygate.com
+    steps:
+      - name: Set K8s Context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_PROD }}
+
+      - name: Deploy Blue/Green (Argo Rollouts or Service Mesh)
+        # Simplified example using standard k8s deployment strategy
+        # Ideally, we deploy to 'green' deployment, run smoke tests, then switch service selector
+        run: |
+          kubectl set image deployment/api-gateway-green gateway=${{ env.DOCKER_IMAGE_NAME }}:sha-${{ github.sha }} -n prod
+          kubectl rollout status deployment/api-gateway-green -n prod
+
+      - name: Smoke Tests (Green)
+        run: |
+          # Test specific endpoint or header routing
+          curl --fail https://green-api.velocitygate.com/actuator/health || exit 1
+
+      - name: Promote Green to Active (Cutover)
+        run: |
+          kubectl patch service api-gateway -p '{"spec":{"selector":{"app":"api-gateway", "color":"green"}}}' -n prod
+          # Scale down old Blue deployment after verification
+          # kubectl scale deployment/api-gateway-blue --replicas=0 -n prod

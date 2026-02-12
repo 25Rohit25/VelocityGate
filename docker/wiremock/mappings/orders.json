@@ -1,0 +1,14 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPattern": "/orders/.*"
+  },
+  "response": {
+    "status": 200,
+    "body": "{\"id\": 1, \"items\": [\"item1\", \"item2\"], \"total\": 100.0}",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "fixedDelayMilliseconds": 50
+  }
+}

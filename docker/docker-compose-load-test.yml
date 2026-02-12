@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: loadtest-postgres
+    environment:
+      POSTGRES_DB: gateway_db
+      POSTGRES_USER: gateway_user
+      POSTGRES_PASSWORD: password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5435:5432" # Different port than dev
+    volumes:
+      - postgres_load_data:/var/lib/postgresql/data
+      - ../scripts/load-test-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - loadtest-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: loadtest-redis
+    ports:
+      - "6380:6379" # Different port
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - loadtest-network
+
+  mock-service:
+    image: wiremock/wiremock:latest
+    container_name: loadtest-mock
+    ports:
+      - "8089:8080"
+    command: --verbose --global-response-templating
+    volumes:
+      - ./wiremock:/home/wiremock
+    networks:
+      - loadtest-network
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: loadtest-gateway
+    ports:
+      - "8081:8080" # Load test gateway on 8081
+    environment:
+      SPRING_PROFILES_ACTIVE: loadtest
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: gateway_db
+      DB_USERNAME: gateway_user
+      DB_PASSWORD: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      USER_SERVICE_URL: http://mock-service:8080
+      ORDER_SERVICE_URL: http://mock-service:8080
+      SERVER_PORT: 8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-service:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G # Limit resource to test efficiency
+    networks:
+      - loadtest-network
+
+  # JMeter container (optional, to run tests inside docker network)
+  jmeter:
+    image: justb4/jmeter:5.5
+    container_name: loadtest-jmeter
+    volumes:
+      - ../load-tests:/tests
+      - ../load-tests/results:/results
+    command: -n -t /tests/test-plan.jmx -l /results/results.jtl -e -o /results/report
+    profiles:
+      - tools # Only run when explicitly asked
+    networks:
+      - loadtest-network
+
+volumes:
+  postgres_load_data:
+
+networks:
+  loadtest-network:
+    driver: bridge

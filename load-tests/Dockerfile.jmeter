@@ -1,0 +1,10 @@
+FROM justb4/jmeter:5.5
+
+# Copy test plan
+COPY test-plan.jmx /tests/test-plan.jmx
+
+# Create results directory
+RUN mkdir -p /results
+
+# Set working directory
+WORKDIR /tests

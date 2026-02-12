@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cluster
+  namespace: gateway
+spec:
+  serviceName: "redis-headless"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-cluster
+  template:
+    metadata:
+      labels:
+        app: redis-cluster
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.0-alpine
+          command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+          ports:
+            - containerPort: 6379
+              name: client
+            - containerPort: 16379
+              name: gossip
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+            - name: redis-config
+              mountPath: /usr/local/etc/redis/
+      volumes:
+        - name: redis-config
+          configMap:
+            name: redis-config
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: gateway
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: client
+  clusterIP: None
+  selector:
+    app: redis-cluster
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: gateway
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: redis-cluster
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: gateway
+data:
+  redis.conf: |
+    cluster-enabled yes
+    cluster-config-file /data/nodes.conf
+    cluster-node-timeout 5000
+    appendonly yes
+    protected-mode no

@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 1s # High frequency for chaos testing
+
+scrape_configs:
+  - job_name: "velocity-gate"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["velocity-gate:8080"]
