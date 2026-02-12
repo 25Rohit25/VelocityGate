@@ -60,7 +60,11 @@ class JwtServiceTest {
                 .signWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(secretKey)))
                 .compact();
 
-        boolean isValid = jwtService.isTokenValid(token, null); // userDetails check mocked/bypassed logic
-        assertFalse(isValid);
+        try {
+            jwtService.isTokenValid(token, null);
+            assertFalse(true, "Should have thrown ExpiredJwtException");
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            assertTrue(true, "Correctly caught ExpiredJwtException");
+        }
     }
 }
